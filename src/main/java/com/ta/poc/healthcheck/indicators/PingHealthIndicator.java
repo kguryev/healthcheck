@@ -1,6 +1,7 @@
 package com.ta.poc.healthcheck.indicators;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -9,8 +10,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.StopWatch;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.IOException;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 public class PingHealthIndicator implements HealthIndicator {
@@ -27,10 +28,10 @@ public class PingHealthIndicator implements HealthIndicator {
     public Health health() {
         StopWatch watch = new StopWatch();
 
-        ResponseEntity<String> responseEntity;
+        ResponseEntity<JsonNode> responseEntity;
         try {
             watch.start();
-            responseEntity = new RestTemplate().getForEntity(url, String.class);
+            responseEntity = new RestTemplate().getForEntity(url, JsonNode.class);
             watch.stop();
         } catch (Exception e) {
             return Health.down()
@@ -42,19 +43,16 @@ public class PingHealthIndicator implements HealthIndicator {
         return getHealth(responseEntity, watch.getTotalTimeMillis());
     }
 
-    private Health getHealth(ResponseEntity<String> responseEntity, long latency) {
+    private Health getHealth(ResponseEntity<JsonNode> responseEntity, long latency) {
         Health.Builder builder = (responseEntity.getStatusCode().equals(HttpStatus.OK) ?
                                   Health.up() :
                                   Health.down())
             .withDetail("latency", latency);
 
-        try {
-            Map<String, String> map = OBJECT_MAPPER.readValue(responseEntity.getBody(), mapTypeReference);
-            for (Map.Entry<String, String> entry : map.entrySet()) {
-                builder.withDetail(entry.getKey(), entry.getValue());
-            }
-        } catch (IOException e) {
-            return builder.down().withDetail("latency", latency).withDetail("error", e.getMessage()).build();
+        JsonNode jsonNode = responseEntity.getBody();
+        for (Iterator<Map.Entry<String, JsonNode>> it = jsonNode.fields(); it.hasNext(); ) {
+            Map.Entry<String, JsonNode> entry = it.next();
+            builder.withDetail(entry.getKey(), entry.getValue());
         }
 
         return builder.build();
